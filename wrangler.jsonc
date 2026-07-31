@@ -1,0 +1,23 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "togglelist",
+	"main": "worker.ts",
+	"compatibility_date": "2026-07-05",
+	"assets": {
+		"directory": "./dist",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application",
+		"run_worker_first": [
+			"/api/*"
+		]
+	},
+	"d1_databases": [
+	{
+		"binding": "DB",
+		"database_name": "togglelist-db",
+		"database_id": "5aab9162-f66a-442d-b7ca-f299f7b962a1",
+		"remote": true,
+		"migrations_dir": "migrations"
+	}
+	]
+}
