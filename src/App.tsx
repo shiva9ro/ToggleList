@@ -45,6 +45,7 @@ export default function App() {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
+  const [displayDate, setDisplayDate] = useState(() => new Date())
   const menuRef = useRef<HTMLDivElement>(null)
   const transientBackGuardActiveRef = useRef(false)
   const ignoreNextPopStateRef = useRef(false)
@@ -78,9 +79,10 @@ export default function App() {
         activeMutationCountRef.current > 0 ||
         localMutationVersionRef.current !== mutationVersionAtStart
       ) {
-        return
+        return false
       }
       applySnapshot(snapshot)
+      setDisplayDate(new Date())
       setShowingCachedSnapshot(false)
       setSyncError(null)
       try {
@@ -88,6 +90,7 @@ export default function App() {
       } catch (cacheError) {
         console.warn('スナップショットを端末へ保存できませんでした。', cacheError)
       }
+      return true
     } catch (error) {
       console.error(error)
       if (showError) {
@@ -97,6 +100,7 @@ export default function App() {
             : 'サーバーとの同期に失敗しました。',
         )
       }
+      return false
     } finally {
       if (showInitialStatus) setInitialSyncing(false)
     }
@@ -159,13 +163,25 @@ export default function App() {
       }
     }
 
+    let foregroundRefresh: Promise<void> | null = null
+    const refreshOnForeground = () => {
+      if (document.visibilityState !== 'visible') return
+      if (foregroundRefresh) return
+      foregroundRefresh = (async () => {
+        const refreshed = await refreshSnapshot(false)
+        if (!refreshed) setDisplayDate(new Date())
+      })().finally(() => {
+        foregroundRefresh = null
+      })
+    }
+
     const timer = window.setInterval(refreshIfVisible, 30_000)
-    window.addEventListener('focus', refreshIfVisible)
-    document.addEventListener('visibilitychange', refreshIfVisible)
+    window.addEventListener('focus', refreshOnForeground)
+    document.addEventListener('visibilitychange', refreshOnForeground)
     return () => {
       window.clearInterval(timer)
-      window.removeEventListener('focus', refreshIfVisible)
-      document.removeEventListener('visibilitychange', refreshIfVisible)
+      window.removeEventListener('focus', refreshOnForeground)
+      document.removeEventListener('visibilitychange', refreshOnForeground)
     }
   }, [])
 
@@ -298,9 +314,8 @@ export default function App() {
     if (!completedAt) return null
     const completed = new Date(completedAt)
     if (Number.isNaN(completed.getTime())) return null
-    const today = new Date()
     const completedDay = Date.UTC(completed.getFullYear(), completed.getMonth(), completed.getDate())
-    const todayDay = Date.UTC(today.getFullYear(), today.getMonth(), today.getDate())
+    const todayDay = Date.UTC(displayDate.getFullYear(), displayDate.getMonth(), displayDate.getDate())
     const days = Math.max(0, Math.floor((todayDay - completedDay) / 86_400_000))
     return days === 0 ? '今日' : `${days}日前`
   }
