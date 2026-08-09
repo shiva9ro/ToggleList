@@ -93,7 +93,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .secondary-button { border: 1px solid #cbd0c4 !important; background: white !important; color: #394435 !important; }
 .danger-button { background: #a13d39 !important; }
 .form-hint { margin: -4px 0 0; color: #697064; font-size: 13px; }
-.loading-screen { display: grid; min-height: 100vh; place-items: center; color: #4c6b3c; font-weight: 800; }
+.loading-screen { display: flex; min-height: 100vh; flex-direction: column; gap: 12px; align-items: center; justify-content: center; padding: 24px; color: #4c6b3c; font-weight: 800; text-align: center; }
 
 @media (min-width: 620px) {
   .app-shell { border-inline: 1px solid #dedfd9; }
@@ -139,6 +139,23 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   color: #9d2b24;
   font-size: 13px;
   font-weight: 700;
+}
+
+.sync-error-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
+.sync-error-actions button {
+  min-height: 36px;
+  padding: 6px 12px;
+  border: 1px solid currentColor;
+  border-radius: 8px;
+  background: white;
+  color: inherit;
+  font-weight: 800;
 }
 
 .sync-status {

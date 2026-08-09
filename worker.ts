@@ -27,6 +27,8 @@ type ItemInput = {
 const app = new Hono<{ Bindings: Env }>()
 const LIST_ID = 'daily-shopping'
 
+app.get('/auth/refresh', (c) => c.redirect('/'))
+
 app.get('/api/health', (c) => c.json({ ok: true }))
 
 app.get('/api/history', async (c) => {

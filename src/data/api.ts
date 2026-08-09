@@ -14,14 +14,25 @@ type ApiSnapshot = {
   items: Array<Record<string, unknown>>
 }
 
+export class ApiNetworkError extends Error {
+  constructor(cause: unknown) {
+    super('APIへの接続に失敗しました。', { cause })
+    this.name = 'ApiNetworkError'
+  }
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...init?.headers,
-    },
-  })
+  const headers = new Headers(init?.headers)
+  if (init?.body != null && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+
+  let response: Response
+  try {
+    response = await fetch(url, { ...init, headers })
+  } catch (error) {
+    throw new ApiNetworkError(error)
+  }
   if (!response.ok) {
     const text = await response.text()
     throw new Error(`${response.status} ${response.statusText}: ${text}`)

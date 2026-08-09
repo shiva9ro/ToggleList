@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { BulkAddDialog } from './components/BulkAddDialog'
 import { ItemDialog } from './components/ItemDialog'
 import { DEFAULT_LIST_ID } from './data/initialData'
-import { completeShoppingOnServer, createItem, createItems, deleteItem, loadHistory, loadSnapshot, reorderItems, updateItem } from './data/api'
+import { ApiNetworkError, completeShoppingOnServer, createItem, createItems, deleteItem, loadHistory, loadSnapshot, reorderItems, updateItem } from './data/api'
 import type { Snapshot } from './data/api'
 import { loadCachedSnapshot, saveCachedSnapshot } from './data/snapshotCache'
 import type { Category, ShoppingHistoryEntry, ShoppingItem, ShoppingList } from './types/models'
@@ -31,6 +31,7 @@ export default function App() {
   const [categories, setCategories] = useState<Category[]>([])
   const [items, setItems] = useState<ShoppingItem[]>([])
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [reauthSuggested, setReauthSuggested] = useState(false)
   const [initialSyncing, setInitialSyncing] = useState(false)
   const [showingCachedSnapshot, setShowingCachedSnapshot] = useState(false)
   const [pendingItemIds, setPendingItemIds] = useState<Set<string>>(new Set())
@@ -70,6 +71,16 @@ export default function App() {
     hasDisplayDataRef.current = true
   }
 
+  function suggestReauthentication(error: unknown) {
+    const suggested = error instanceof ApiNetworkError && navigator.onLine
+    setReauthSuggested(suggested)
+    return suggested
+  }
+
+  function reauthenticate() {
+    window.location.assign('/auth/refresh')
+  }
+
   async function refreshSnapshot(showError = true, showInitialStatus = false) {
     if (showInitialStatus) setInitialSyncing(true)
     const mutationVersionAtStart = localMutationVersionRef.current
@@ -85,6 +96,7 @@ export default function App() {
       setDisplayDate(new Date())
       setShowingCachedSnapshot(false)
       setSyncError(null)
+      setReauthSuggested(false)
       try {
         await saveCachedSnapshot(snapshot)
       } catch (cacheError) {
@@ -94,11 +106,12 @@ export default function App() {
     } catch (error) {
       console.error(error)
       if (showError) {
-        setSyncError(
-          hasDisplayDataRef.current
+        const authenticationMayHaveExpired = suggestReauthentication(error)
+        setSyncError(authenticationMayHaveExpired
+          ? 'サーバーと同期できません。ログインの有効期限が切れた可能性があります。'
+          : hasDisplayDataRef.current
             ? 'サーバーと同期できません。前回のデータを表示しています。'
-            : 'サーバーとの同期に失敗しました。',
-        )
+            : 'サーバーとの同期に失敗しました。')
       }
       return false
     } finally {
@@ -121,6 +134,7 @@ export default function App() {
     activeMutationCountRef.current += 1
     localMutationVersionRef.current += 1
     setSyncError(null)
+    setReauthSuggested(false)
     applyOptimisticUpdate()
 
     try {
@@ -129,7 +143,10 @@ export default function App() {
       console.error(error)
       localMutationVersionRef.current += 1
       rollback()
-      setSyncError('変更を保存できませんでした。通信状態を確認して、もう一度お試しください。')
+      const authenticationMayHaveExpired = suggestReauthentication(error)
+      setSyncError(authenticationMayHaveExpired
+        ? '変更を保存できませんでした。ログインの有効期限が切れた可能性があります。'
+        : '変更を保存できませんでした。通信状態を確認して、もう一度お試しください。')
     } finally {
       activeMutationCountRef.current -= 1
       const remainingPendingIds = new Set(pendingItemIdsRef.current)
@@ -513,7 +530,12 @@ export default function App() {
     return (
       <main className="loading-screen">
         <p>{syncError ?? 'ToggleListを準備しています…'}</p>
-        {syncError && <button type="button" onClick={() => void refreshSnapshot()}>再試行</button>}
+        {syncError && (
+          <div className="sync-error-actions">
+            {reauthSuggested && <button type="button" onClick={reauthenticate}>再ログイン</button>}
+            <button type="button" onClick={() => void refreshSnapshot()}>再試行</button>
+          </div>
+        )}
       </main>
     )
   }
@@ -597,7 +619,15 @@ export default function App() {
         </div>
       </header>
 
-      {syncError && <div className="sync-error" role="alert">{syncError}</div>}
+      {syncError && (
+        <div className="sync-error" role="alert">
+          <span>{syncError}</span>
+          <div className="sync-error-actions">
+            {reauthSuggested && <button type="button" onClick={reauthenticate}>再ログイン</button>}
+            <button type="button" onClick={() => void refreshSnapshot()}>再試行</button>
+          </div>
+        </div>
+      )}
       {initialSyncing && showingCachedSnapshot && (
         <div className="sync-status" role="status">
           前回のデータを表示しています。最新情報を確認中…
