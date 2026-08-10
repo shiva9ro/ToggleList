@@ -168,6 +168,39 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   text-align: center;
 }
 
+.update-prompt {
+  position: fixed;
+  z-index: 50;
+  right: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  left: 16px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 12px 14px;
+  border: 1px solid #ccd6c6;
+  border-radius: 12px;
+  background: #f7faf5;
+  color: #35452f;
+  font-size: 13px;
+  font-weight: 800;
+  box-shadow: 0 6px 24px rgba(33, 52, 25, 0.2);
+}
+
+.update-prompt button {
+  flex: 0 0 auto;
+  min-height: 38px;
+  padding: 7px 13px;
+  border: 0;
+  border-radius: 9px;
+  background: #4c6b3c;
+  color: white;
+  font-weight: 800;
+}
+
 .last-completed-badge {
   align-self: center;
   flex: 0 0 auto;
