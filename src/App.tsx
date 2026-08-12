@@ -45,6 +45,7 @@ export default function App() {
   const [history, setHistory] = useState<ShoppingHistoryEntry[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyError, setHistoryError] = useState<string | null>(null)
+  const [expandedHistoryIds, setExpandedHistoryIds] = useState<Set<number>>(new Set())
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set())
   const [displayDate, setDisplayDate] = useState(() => new Date())
   const menuRef = useRef<HTMLDivElement>(null)
@@ -297,6 +298,18 @@ export default function App() {
     })
   }, [items, search])
 
+  const searchActive = normalizeSearchText(search) !== ''
+  const visibleCategoryIds = useMemo(
+    () => categories
+      .filter((category) => matchedItems.some((item) =>
+        item.categoryId === category.id && (sortMode || item.status === 'inactive'),
+      ))
+      .map((category) => category.id),
+    [categories, matchedItems, sortMode],
+  )
+  const allVisibleCategoriesCollapsed = visibleCategoryIds.length > 0 &&
+    visibleCategoryIds.every((categoryId) => collapsedCategories.has(categoryId))
+
   const shoppingItems = useMemo(
     () => matchedItems
       .filter((item) => item.status !== 'inactive')
@@ -481,9 +494,22 @@ export default function App() {
     })
   }
 
+  function toggleAllCategories() {
+    setCollapsedCategories((current) => {
+      const next = new Set(current)
+      if (allVisibleCategoriesCollapsed) {
+        visibleCategoryIds.forEach((categoryId) => next.delete(categoryId))
+      } else {
+        visibleCategoryIds.forEach((categoryId) => next.add(categoryId))
+      }
+      return next
+    })
+  }
+
   async function openHistory() {
     setMenuOpen(false)
     setHistoryOpen(true)
+    setExpandedHistoryIds(new Set())
     setHistoryLoading(true)
     setHistoryError(null)
     try {
@@ -512,6 +538,26 @@ export default function App() {
     if (entry.action.startsWith('買い物を完了')) return entry.action
     if (!entry.itemName) return entry.action
     return `${entry.itemName}を${entry.action}`
+  }
+
+  function historyItemNames(entry: ShoppingHistoryEntry) {
+    if (!entry.action.startsWith('買い物を完了') || !entry.itemName) return null
+    try {
+      const parsed: unknown = JSON.parse(entry.itemName)
+      if (Array.isArray(parsed) && parsed.every((name) => typeof name === 'string')) return parsed
+    } catch {
+      // Older history rows contain an already formatted summary.
+    }
+    return null
+  }
+
+  function toggleHistoryDetails(historyId: number) {
+    setExpandedHistoryIds((current) => {
+      const next = new Set(current)
+      if (next.has(historyId)) next.delete(historyId)
+      else next.add(historyId)
+      return next
+    })
   }
 
   function exportJson() {
@@ -563,19 +609,39 @@ export default function App() {
           )}
           {!historyLoading && !historyError && history.length > 0 && (
             <ol className="history-list">
-              {history.map((entry) => (
-                <li key={entry.id}>
-                  <p className="history-action">{historyTitle(entry)}</p>
-                  {entry.action.startsWith('買い物を完了') && entry.itemName && (
-                    <p className="history-detail">{entry.itemName}</p>
-                  )}
-                  <p className="history-meta">
-                    <span>{formatUpdater(entry.actor)}</span>
-                    <span aria-hidden="true">・</span>
-                    <time dateTime={entry.createdAt}>{formatHistoryTime(entry.createdAt)}</time>
-                  </p>
-                </li>
-              ))}
+              {history.map((entry) => {
+                const names = historyItemNames(entry)
+                const expanded = expandedHistoryIds.has(entry.id)
+                const visibleNames = names && !expanded ? names.slice(0, 3) : names
+                return (
+                  <li key={entry.id}>
+                    <p className="history-action">{historyTitle(entry)}</p>
+                    {visibleNames && (
+                      <ul className="history-completed-items">
+                        {visibleNames.map((name, index) => <li key={`${entry.id}-${index}`}>{name}</li>)}
+                      </ul>
+                    )}
+                    {!names && entry.action.startsWith('買い物を完了') && entry.itemName && (
+                      <p className="history-detail">{entry.itemName}</p>
+                    )}
+                    {names && names.length > 3 && (
+                      <button
+                        type="button"
+                        className="history-expand-button"
+                        onClick={() => toggleHistoryDetails(entry.id)}
+                        aria-expanded={expanded}
+                      >
+                        {expanded ? '閉じる' : `残り${names.length - 3}件を表示`}
+                      </button>
+                    )}
+                    <p className="history-meta">
+                      <span>{formatUpdater(entry.actor)}</span>
+                      <span aria-hidden="true">・</span>
+                      <time dateTime={entry.createdAt}>{formatHistoryTime(entry.createdAt)}</time>
+                    </p>
+                  </li>
+                )
+              })}
             </ol>
           )}
         </main>
@@ -702,7 +768,16 @@ export default function App() {
       <main className="catalog-section">
         <header className="section-heading catalog-heading">
           <h2>{sortMode ? '並べ替え' : '全項目'}</h2>
-          {!sortMode && <span>{matchedItems.filter((item) => item.status === 'inactive').length}件</span>}
+          {!sortMode && (
+            <div className="catalog-heading-actions">
+              <span>{matchedItems.filter((item) => item.status === 'inactive').length}件</span>
+              {!searchActive && visibleCategoryIds.length > 0 && (
+                <button type="button" onClick={toggleAllCategories}>
+                  {allVisibleCategoriesCollapsed ? 'すべて展開' : 'すべて折りたたむ'}
+                </button>
+              )}
+            </div>
+          )}
         </header>
 
         <div className="category-list">
@@ -711,7 +786,7 @@ export default function App() {
               .filter((item) => item.categoryId === category.id && (sortMode || item.status === 'inactive'))
               .sort((a, b) => a.sortOrder - b.sortOrder)
             if (categoryItems.length === 0) return null
-            const collapsed = collapsedCategories.has(category.id)
+            const collapsed = !searchActive && !sortMode && collapsedCategories.has(category.id)
 
             return (
               <section className="category-group" key={category.id}>

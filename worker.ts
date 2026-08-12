@@ -151,8 +151,7 @@ app.post('/api/shopping/complete', async (c) => {
     const actor = getAuthenticatedEmail(c)
     await touchList(c.env.DB, now, actor)
     const names = purchased.results.map((row) => row.name)
-    const summary = names.length <= 3 ? names.join('、') : `${names.slice(0, 3).join('、')}ほか${names.length - 3}件`
-    await addHistory(c.env.DB, `買い物を完了（${names.length}件）`, summary, actor, now)
+    await addHistory(c.env.DB, `買い物を完了（${names.length}件）`, JSON.stringify(names), actor, now)
   }
   return c.json({ ok: true, completed: result.meta.changes ?? 0, updatedAt: now })
 })

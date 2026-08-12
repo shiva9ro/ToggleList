@@ -54,6 +54,8 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 
 .catalog-section { background: #f5f4ef; }
 .catalog-heading { padding-top: 9px; }
+.catalog-heading-actions { display: flex; align-items: center; gap: 9px; }
+.catalog-heading-actions button { min-height: 32px; padding: 4px 8px; border: 1px solid #cbd0c4; border-radius: 8px; background: white; color: #4c5b45; font-size: 11px; font-weight: 800; }
 .category-list { background: white; }
 .category-group { border-top: 1px solid #dfe2da; }
 .category-group:first-child { border-top: 0; }
@@ -280,6 +282,28 @@ button:disabled { cursor: not-allowed; opacity: .42; }
   color: #5f675a;
   font-size: 12px;
   line-height: 1.45;
+}
+.history-completed-items {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding: 0;
+  color: #5f675a;
+  font-size: 12px;
+  line-height: 1.45;
+  list-style: none;
+}
+.history-completed-items li { padding: 0; border: 0; }
+.history-expand-button {
+  min-height: 32px;
+  margin-top: 5px;
+  padding: 4px 8px;
+  border: 1px solid #cbd0c4;
+  border-radius: 8px;
+  background: white;
+  color: #4c5b45;
+  font-size: 11px;
+  font-weight: 800;
 }
 .history-meta {
   display: flex;
