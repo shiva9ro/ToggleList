@@ -2,10 +2,7 @@
 
 ## 1. 依存関係をインストール
 
-Windows ARM64環境では、Cloudflareの`workerd`を動かすためx64版Node.jsを使用します。
-
 ```powershell
-$env:Path = "C:\Tools\node-v24.18.0-win-x64;$env:Path"
 npm.cmd clean-install
 ```
 
