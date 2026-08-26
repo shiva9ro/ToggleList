@@ -1,84 +1,92 @@
-# ToggleList Cloudflare公開・更新手順
+# Deploying ToggleList to Cloudflare
 
-## 1. 依存関係をインストール
+English | [日本語](CLOUDFLARE_SETUP.ja.md)
+
+This guide covers the Cloudflare-specific setup for a self-hosted ToggleList instance. Commands are shown for PowerShell on Windows.
+
+## 1. Install dependencies
 
 ```powershell
 npm.cmd clean-install
 ```
 
-## 2. Cloudflareへログイン
+## 2. Sign in to Cloudflare
 
 ```powershell
 npx.cmd wrangler login
 npx.cmd wrangler whoami
 ```
 
-## 3. D1データベース
+## 3. Create the D1 database
 
-新規構築時だけD1を作成します。
+Create the database only when setting up a new instance:
 
 ```powershell
 npx.cmd wrangler d1 create togglelist-db
 ```
 
-作成後、`wrangler.jsonc`の`database_id`へD1のUUIDを設定します。D1 UUIDは認証情報ではありませんが、公開リポジトリでは利用環境を特定する識別子になる点に注意してください。
+Copy the resulting D1 UUID into `database_id` in `wrangler.jsonc`. A D1 UUID is not a credential, but it identifies a specific deployment environment when committed to a public repository.
 
-## 4. D1マイグレーション
+## 4. Apply D1 migrations
 
-未適用マイグレーションを確認します。
+List unapplied production migrations:
 
 ```powershell
 npx.cmd wrangler d1 migrations list togglelist-db --remote
 ```
 
-未適用SQLがある場合だけ、本番D1へ適用します。
+If migrations are pending, apply them before deploying a Worker that depends on the new schema:
 
 ```powershell
 npx.cmd wrangler d1 migrations apply togglelist-db --remote
 ```
 
-マイグレーションは`migrations`フォルダ内のSQLを番号順に適用します。通常のWorker再デプロイだけでは、既存のD1データは消えません。
+Wrangler applies the SQL files in `migrations` in numeric order. Redeploying the Worker does not normally delete data from the existing D1 database.
 
-## 5. GitHubから自動デプロイ
+## 5. Deploy from GitHub
 
-Cloudflare Workers Buildsは`main`ブランチに接続しています。
-
-```powershell
-git add .
-git commit -m "変更内容"
-git push origin main
-```
-
-Cloudflare側では以下を実行します。
+Connect Cloudflare Workers Builds to the `main` branch. Configure these commands in Cloudflare:
 
 ```text
 Build command: npm run build
 Deploy command: npx wrangler deploy
 ```
 
-D1マイグレーションは自動適用されないため、スキーマ変更がある場合はpush前に手動で実行します。
+Pushing a commit to `main` then starts the connected Cloudflare build:
 
-## 6. Cloudflare Access
+```powershell
+git add .
+git commit -m "Describe the change"
+git push origin main
+```
 
-本番URLとプレビューURLはCloudflare Accessで保護します。
+D1 migrations are not applied by this build configuration. Apply required production migrations manually before pushing a schema-dependent deployment.
 
-- Identity Provider: Google
-- Policy: 許可した家族のGoogleアカウントだけをInclude
-- One-time PIN: 無効
-- セッション期間: 1か月
+## 6. Protect the app with Cloudflare Access
 
-Workerは`Cf-Access-Authenticated-User-Email`ヘッダーから認証済み利用者を取得し、変更者と変更履歴へ保存します。
+Protect both the production URL and all preview URLs. The current household setup uses:
 
-## ローカル確認
+- Identity provider: Google
+- Allow policy: include only the exact Google accounts authorized to use the list
+- One-time PIN: disabled
+- Session duration: one month
+
+The Worker reads the authenticated user from the `Cf-Access-Authenticated-User-Email` header and stores that value as the actor in change history. The Worker does not independently verify this header, so do not expose it without the intended Cloudflare Access protection.
+
+Do not commit OAuth client secrets or Cloudflare API tokens. Review the Access policy and preview-domain coverage before sharing the deployment URL.
+
+## Local verification
+
+Apply migrations to the local D1 database and start the Worker locally:
 
 ```powershell
 npm.cmd run db:migrate:local
 npm.cmd run dev:cloudflare
 ```
 
-他端末相当の確認ではブラウザを2つ開きます。操作端末は楽観的更新で即時に画面へ反映し、通信完了後にD1と整合確認します。もう一方は最大約30秒、または画面復帰時に反映されます。
+For a multi-device equivalent check, open two browser sessions. The session where an action is performed updates optimistically and reconciles with D1 after the request completes. The other session receives the change within about 30 seconds, or when its page or window becomes active.
 
-## API
+## API endpoints
 
 - `GET /api/health`
 - `GET /api/snapshot`
@@ -91,9 +99,10 @@ npm.cmd run dev:cloudflare
 - `PUT /api/items/reorder`
 - `POST /api/shopping/complete`
 
-## 現在の制約
+## Current limitations
 
-- 同時更新は最終書き込み優先です。
-- オフライン時の変更キューは未実装です。
-- IndexedDBは端末表示用のキャッシュであり、共有データの正本はD1です。
-- 変更履歴は買い物リストの状態変更を対象とし、商品マスタの編集や並べ替えは記録しません。
+- Concurrent updates use last-write-wins behavior.
+- There is no offline mutation queue.
+- IndexedDB is a device-local display cache; D1 remains the shared source of truth.
+- Change history records shopping-list state changes, but not item-catalog edits or reordering.
+- This repository distributes source code only. It does not provide a prebuilt application through GitHub Releases or a package through GitHub Packages.

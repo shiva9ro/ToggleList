@@ -81,7 +81,7 @@ npm.cmd run build
 
 ## Cloudflareへの公開
 
-D1作成、マイグレーション、Cloudflare Access、GitHub連携の手順は[CLOUDFLARE_SETUP.md](CLOUDFLARE_SETUP.md)を参照してください。
+D1作成、マイグレーション、Cloudflare Access、GitHub連携の手順は[CLOUDFLARE_SETUP.ja.md](CLOUDFLARE_SETUP.ja.md)を参照してください。
 
 スキーマ変更を含む場合は、Workerをデプロイする前に本番D1へ未適用マイグレーションを適用します。本番URLとプレビューURLの両方をCloudflare Accessで保護してください。
 
