@@ -1,59 +1,61 @@
 # ToggleList
 
-家族で共有し、繰り返し使える買い物リストのPWAです。商品マスタから必要なものを買い物リストへ追加し、購入済みへの切り替えと買い物完了を複数端末で共有できます。
+English | [日本語](README.ja.md)
 
-![ToggleListのメイン画面](docs/images/togglelist-main.png)
+ToggleList is a self-hosted, reusable shopping-list PWA for a household. Family members select items from a shared catalog, move them through three shopping states, and synchronize changes across devices.
 
-## 主な機能
+The user interface and sample data are in Japanese. The app was built for a small Japanese-speaking household and has primarily been tested as an installed PWA on Android.
 
-- 買い物対象／購入済み／対象外の3状態
-- カテゴリ別の商品一覧と、カテゴリ単位／一括での折りたたみ
-- 商品の追加・編集・削除、一括追加、並べ替え
-- 購入済み商品の一括完了
-- 商品ごとの最終購入日を「今日／○日前」で表示
-- 変更日時、変更者、買い物操作と買い物完了商品の履歴
-- ひらがな／カタカナ、半角／全角を吸収する検索
-- 商品ごとの「検索用の読み・別名」
-- JSON形式でのデータ書き出し
-- インストール可能なPWA
-- 新しいバージョンの通知と画面からの更新
-- Cloudflare Accessのセッション切れを想定した再ログイン導線
+![ToggleList main screen](docs/images/togglelist-main.png)
 
-## 体感速度と同期
+## Features
 
-共有データの正本はCloudflare D1です。端末では次の方法で通信待ちを目立たなくしています。
+- Three explicit states: inactive, planned, and purchased
+- Categorized item catalog with per-category and global collapse controls
+- Add, edit, delete, bulk-add, and deliberately reorder items
+- Complete all purchased items together while leaving unpurchased items planned
+- Show each item's most recent purchase as today or a number of days ago
+- Recent history with timestamps, authenticated users, shopping actions, and completed items
+- Japanese search normalization across hiragana/katakana and half-width/full-width forms
+- Optional readings and aliases for each item
+- JSON data export
+- Installable PWA with update notifications
+- A reauthentication path for expired Cloudflare Access sessions
 
-- 前回の正常取得結果をIndexedDBへ保存
-- 2回目以降の起動では前回データを先に表示し、裏側で最新版を取得
-- 買い物への追加、購入済み切り替え、取り消し、買い物完了は画面へ即時反映
-- 通信失敗時は操作前の状態へ戻してエラーを表示
-- 更新中の古い取得結果が楽観的更新を上書きしないよう制御
+## Scope and architecture
 
-他端末の変更は、画面表示中は最大約30秒、画面復帰時またはウィンドウ復帰時に取得します。同時更新は最終書き込み優先です。
+ToggleList is intended for a small, trusted household, not as a multi-tenant shopping service. Cloudflare D1 is the source of truth. IndexedDB stores the last successful snapshot on each device so that the list appears quickly; saved changes still require a network connection.
 
-オフライン変更キューは実装していません。前回データの表示と検索はできますが、変更の保存には通信が必要です。
+```text
+Installed PWA / browser
+  ├─ IndexedDB (display cache)
+  └─ Cloudflare Worker API
+       └─ D1 (shared source of truth)
+```
 
-## 技術構成
+The UI applies common shopping actions optimistically and rolls them back if saving fails. While visible, the app checks for changes from other devices about every 30 seconds and also refreshes when the page or window becomes active. Concurrent edits use last-write-wins behavior. There is no offline mutation queue.
 
-- フロントエンド: React 19 + TypeScript + Vite
-- PWA: vite-plugin-pwa
-- 端末キャッシュ: Dexie / IndexedDB
-- API: Cloudflare Workers + Hono
-- 共有データベース: Cloudflare D1
-- 認証: Cloudflare Access + Google OAuth
-- 配信: Cloudflare Workers Static Assets
-- 継続デプロイ: GitHub連携のCloudflare Workers Builds
+## Technology
 
-## 必要な環境
+- React 19, TypeScript, and Vite
+- vite-plugin-pwa
+- Dexie and IndexedDB
+- Cloudflare Workers, Hono, and D1
+- Cloudflare Access with Google as the identity provider
+- Cloudflare Workers Builds connected to GitHub
+
+## Requirements
 
 - Node.js 24
 - npm
-- Cloudflareアカウント
-- Wranglerで作成したD1データベース
+- A Cloudflare account
+- A D1 database created with Wrangler
 
-## ローカル起動
+The deployed app requires a modern browser with PWA and IndexedDB support. The current household installation has been tested on Android. Other modern browsers may work, but are not part of the project's verified environment.
 
-Cloudflare WorkerとローカルD1をまとめて起動します。
+## Local setup
+
+Install the locked dependencies, apply the migrations to a local D1 database, and start the Worker with its static assets:
 
 ```powershell
 npm.cmd clean-install
@@ -61,40 +63,45 @@ npm.cmd run db:migrate:local
 npm.cmd run dev:cloudflare
 ```
 
-表示されたURLを開いてください。空のD1では、初回アクセス時に`src/data/initialData.ts`のサンプル商品を登録します。自分用に構築する場合は、初回起動前にこのファイルを編集できます。
+Open the URL printed by Wrangler. On first access to an empty database, the app inserts the sample catalog from `src/data/initialData.ts`. Edit that file before first use if you want different initial items. Do not commit a private household catalog to a public fork.
 
-## 品質確認
+For frontend-only development, `npm.cmd run dev` starts Vite, but API-backed operations require the Worker/D1 development command above.
+
+## Build and checks
 
 ```powershell
+npm.cmd clean-install
 npm.cmd run lint
 npm.cmd run build
 ```
 
-## Cloudflareへの公開
+There is currently no automated unit-test suite. The CI workflow runs the existing static checks and production build on every push and pull request. For manual multi-device testing, open two browser sessions and verify that changes reach the other session within about 30 seconds or after focus is restored.
 
-D1作成、マイグレーション、Cloudflare Access、GitHub連携の手順は[CLOUDFLARE_SETUP.md](CLOUDFLARE_SETUP.md)を参照してください。
+## Deployment
 
-スキーマ変更を含む場合は、Workerをデプロイする前に本番D1へ未適用マイグレーションを適用します。
+See [CLOUDFLARE_SETUP.md](CLOUDFLARE_SETUP.md) for D1 creation and migrations, Cloudflare Access protection, and GitHub-connected Workers Builds.
 
-## PWAの更新
+Apply pending production D1 migrations before deploying a Worker that depends on a schema change. Protect both production and preview URLs with Cloudflare Access.
 
-Service Workerは、画面復帰時と表示中30分ごとに更新を確認します。新しいバージョンを検出すると画面に通知し、「更新する」を押すと最新版へ切り替わります。
+## Data and security
 
-## 再ログイン
+- D1 stores the shared item data and the authenticated user's email address in change history.
+- IndexedDB is only a device-local display cache, not an independent backup or offline write store.
+- JSON exports can contain item names, notes, and user identifiers; store and share them carefully.
+- Do not commit real household data, logs, OAuth client secrets, Cloudflare API tokens, or local environment files.
+- Restrict the Cloudflare Access policy to the intended users. The Worker trusts the `Cf-Access-Authenticated-User-Email` header supplied by Access; deploying it without Access removes that intended protection.
+- Concurrent updates are not conflict-merged and the most recent write wins.
 
-Cloudflare Accessのセッション切れが疑われる場合は、同期エラーとともに「再ログイン」を表示します。通常の通信エラーの可能性もあるため、「再試行」も選べます。
+Review Cloudflare and Google terms, pricing, quotas, and security settings for your own deployment. This independent project is not affiliated with or endorsed by Cloudflare or Google.
 
-## データ保持
+## Distribution policy
 
-Workerやフロントエンドを再デプロイしても、同じD1を参照している限り、買い物リストと変更履歴は保持されます。端末内IndexedDBは表示を速めるためのキャッシュであり、共有データの正本ではありません。
+This repository provides source code only. It does not publish prebuilt archives or application binaries through GitHub Releases, and it does not publish a library or container through GitHub Packages. Operators build and deploy their own instance so that authentication, database, and access-control settings remain under their control.
 
-## セキュリティ
+## Related article
 
-- 本番URLとプレビューURLの両方をCloudflare Accessで保護してください。
-- D1には利用者のメールアドレスが変更者情報として保存されます。
-- JSON書き出しデータには商品名、メモ、更新者などが含まれるため、取り扱いに注意してください。
-- 公開リポジトリへ実データ、ログ、認証情報、個人用の初期商品名をコミットしないでください。
+- [家族用の買い物リストPWAをReact・Cloudflare Workers・D1で作った (Qiita, Japanese)](https://qiita.com/shiva9ro/items/0796d25b2b6a701ed225)
 
-## ライセンス
+## License
 
 [MIT License](LICENSE)
