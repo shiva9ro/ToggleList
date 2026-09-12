@@ -183,14 +183,22 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 }
 
 .sync-status {
-  padding: 7px 12px;
-  border-bottom: 1px solid #dce2d7;
+  min-width: 0;
+  margin-left: auto;
+  margin-right: 8px;
+  padding: 4px 7px;
+  overflow: hidden;
+  border-radius: 6px;
   background: #edf3e9;
   color: #53634c;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  text-align: center;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
+
+.app-header .title-block { flex: 0 0 auto; margin-right: 8px; }
+.app-header .menu-wrap { flex: 0 0 auto; }
 
 .update-prompt {
   position: fixed;

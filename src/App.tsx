@@ -600,6 +600,17 @@ export default function App() {
         <div className="title-block">
           <h1>ToggleList</h1>
         </div>
+        {(offline || pendingCount > 0 || (initialSyncing && showingCachedSnapshot)) && (
+          <span
+            className="sync-status"
+            role="status"
+            title={pendingCount > 0 ? '変更は端末に保存済みです。接続後に自動同期します。' : undefined}
+          >
+            {offline || pendingCount > 0
+              ? `${offline ? 'オフライン・' : ''}未同期${pendingCount}件`
+              : '最新情報を確認中…'}
+          </span>
+        )}
         <div className="menu-wrap" ref={menuRef}>
           <button
             className="menu-button"
@@ -639,18 +650,6 @@ export default function App() {
           </div>
         </div>
       )}
-      {(offline || pendingCount > 0) && (
-        <div className="sync-status" role="status">
-          {offline ? 'オフライン・' : ''}未同期{pendingCount}件
-          {pendingCount > 0 && '（端末に保存済み・接続後に自動同期）'}
-        </div>
-      )}
-      {initialSyncing && showingCachedSnapshot && (
-        <div className="sync-status" role="status">
-          前回のデータを表示しています。最新情報を確認中…
-        </div>
-      )}
-
       <div className="search-row">
         <label className="search-box">
           <span aria-hidden="true">⌕</span>
