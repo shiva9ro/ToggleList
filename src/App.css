@@ -44,7 +44,7 @@ button:disabled { cursor: not-allowed; opacity: .42; }
 .shopping-section { border-bottom: 6px solid #e8e9e4; background: white; }
 .shopping-list, .item-list { margin: 0; padding: 0; list-style: none; }
 .shopping-row { display: flex; min-height: 49px; border-top: 1px solid #eceee8; background: white; }
-.purchase-button { display: grid; flex: 1; grid-template-columns: 31px minmax(0,1fr); gap: 8px; align-items: center; min-width: 0; min-height: 49px; padding: 5px 4px 5px 11px; border: 0; background: transparent; text-align: left; touch-action: pan-y; }
+.purchase-button { display: grid; flex: 1; grid-template-columns: 31px minmax(0,1fr); gap: 8px; align-items: center; min-width: 0; min-height: 49px; padding: 5px 4px 5px 31px; border: 0; background: transparent; text-align: left; touch-action: pan-y; }
 .purchase-button:active, .add-shopping-button:active { background: #eef3eb; }
 .check-icon { display: grid; width: 27px; height: 27px; place-items: center; border: 2px solid #6c7767; border-radius: 7px; color: white; font-size: 18px; font-weight: 900; }
 .shopping-row.purchased { background: #eef2eb; }
