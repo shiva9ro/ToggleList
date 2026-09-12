@@ -342,6 +342,37 @@ export default function App() {
     await changeShoppingStatus(item, 'planned')
   }
 
+  function renderShoppingCategoryHeading(categoryId: string) {
+    // Search limits the bulk action to the items the user can currently see.
+    const categoryItems = shoppingItems.filter((item) => item.categoryId === categoryId)
+    const checkedCount = categoryItems.filter((item) => item.status === 'purchased').length
+    const allChecked = checkedCount === categoryItems.length
+    const name = categories.find((category) => category.id === categoryId)?.name ?? 'その他'
+    return (
+      <li className="shopping-category-heading">
+        <h3>
+          <button
+            type="button"
+            className="category-purchase-button"
+            role="checkbox"
+            aria-checked={allChecked ? true : checkedCount > 0 ? 'mixed' : false}
+            aria-label={`${name}の${searchActive ? '表示中の' : ''}${categoryItems.length}件を${allChecked ? '未購入に戻す' : '購入済みにする'}`}
+            disabled={categoryItems.some((item) => pendingItemIds.has(item.id))}
+            onClick={() => void saveShoppingOperation({
+              id: createId(), kind: 'status', createdAt: new Date().toISOString(),
+              itemIds: categoryItems.filter((item) => allChecked || item.status !== 'purchased').map((item) => item.id),
+              status: allChecked ? 'planned' : 'purchased',
+            })}
+          >
+            <span className="check-icon" aria-hidden="true">{allChecked ? '✓' : checkedCount > 0 ? '−' : ''}</span>
+            <span>{name}{searchActive ? '（表示中）' : ''}</span>
+            <span className="category-count">{checkedCount}/{categoryItems.length}</span>
+          </button>
+        </h3>
+      </li>
+    )
+  }
+
   async function togglePurchased(item: ShoppingItem) {
     await changeShoppingStatus(item, item.status === 'purchased' ? 'planned' : 'purchased')
   }
@@ -684,9 +715,7 @@ export default function App() {
             {shoppingItems.map((item, index) => (
               <Fragment key={item.id}>
                 {(index === 0 || shoppingItems[index - 1].categoryId !== item.categoryId) && (
-                  <li className="shopping-category-heading">
-                    <h3>{categories.find((category) => category.id === item.categoryId)?.name ?? 'その他'}</h3>
-                  </li>
+                  renderShoppingCategoryHeading(item.categoryId)
                 )}
                 <li className={item.status === 'purchased' ? 'shopping-row purchased' : 'shopping-row'} key={item.id}>
                   <button

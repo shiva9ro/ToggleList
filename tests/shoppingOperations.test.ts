@@ -80,6 +80,21 @@ test('a deleted item is not resurrected and does not block subsequent queue entr
   db.close()
 })
 
+test('category status changes are atomic, retryable and limited to selected IDs', () => {
+  const db = fixture()
+  const op: ShoppingOperation = { ...operation, kind: 'status', status: 'purchased' }
+  assert.equal(isShoppingOperation(op), true)
+  apply(db, op)
+  assert.equal(db.prepare("SELECT status FROM items WHERE id = 'b'").get()!.status, 'purchased')
+  const undo: ShoppingOperation = { ...op, id: 'category-undo-0002', status: 'planned' }
+  apply(db, undo)
+  apply(db, op)
+  assert.equal(db.prepare("SELECT status FROM items WHERE id = 'a'").get()!.status, 'planned')
+  assert.equal(db.prepare("SELECT status FROM items WHERE id = 'b'").get()!.status, 'planned')
+  assert.equal(db.prepare("SELECT status FROM items WHERE id = 'c'").get()!.status, 'purchased')
+  db.close()
+})
+
 test('transaction failure rolls back both product state and retry receipt', () => {
   const db = fixture()
   db.exec("CREATE TRIGGER fail_history BEFORE INSERT ON shopping_history BEGIN SELECT RAISE(ABORT, 'test failure'); END")

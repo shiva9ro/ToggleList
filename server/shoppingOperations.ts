@@ -8,7 +8,7 @@ export function isShoppingOperation(value: unknown): value is ShoppingOperation 
     && op.itemIds.every((id) => typeof id === 'string' && id.length > 0 && id.length <= 200)
     && new Set(op.itemIds).size === op.itemIds.length
     && typeof op.createdAt === 'string' && Number.isFinite(Date.parse(op.createdAt))
-    && (op.kind === 'complete' || (op.kind === 'status' && op.itemIds.length === 1
+    && (op.kind === 'complete' || (op.kind === 'status'
       && ['inactive', 'planned', 'purchased'].includes(String(op.status))))
 }
 

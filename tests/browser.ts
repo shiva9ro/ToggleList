@@ -121,9 +121,20 @@ try {
   await waitFor(() => document.querySelectorAll('.shopping-row').length === 3)
   const rowNames = () => [...document.querySelectorAll('.shopping-row .item-name')].map((node) => node.textContent).join(',')
   check(rowNames() === 'a,b,c', 'shopping rows follow category order instead of checked status')
-  check(document.querySelector('.shopping-category-heading')?.textContent?.trim() === 'パン麺類', 'category heading follows category sortOrder')
-  unavailable = true
+  check(document.querySelector('.shopping-category-heading')?.textContent?.includes('パン麺類'), 'category heading follows category sortOrder')
   const click = (selector: string) => (document.querySelector(selector) as HTMLButtonElement).click()
+  const category = () => document.querySelector('.category-purchase-button')!
+  check(category().getAttribute('aria-checked') === 'mixed', 'category checkbox shows a partial selection')
+  click('.category-purchase-button')
+  await waitFor(() => category().getAttribute('aria-checked') === 'true')
+  check(document.querySelectorAll('.shopping-row.purchased').length === 2, 'category check selects only its own products')
+  click('.category-purchase-button')
+  await waitFor(() => category().getAttribute('aria-checked') === 'false')
+  check(document.querySelectorAll('.shopping-row.purchased').length === 0, 'category uncheck restores all its products')
+  click('.shopping-row .purchase-button')
+  await waitFor(() => category().getAttribute('aria-checked') === 'mixed')
+  await waitFor(() => !document.querySelector('.sync-status'))
+  unavailable = true
   click('.shopping-row .purchase-button')
   await waitFor(() => !document.querySelector('.shopping-row')?.classList.contains('purchased'))
   check(rowNames() === 'a,b,c', 'checking and unchecking does not move the row')

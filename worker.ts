@@ -156,7 +156,9 @@ app.post('/api/shopping/operations', async (c) => {
   ).bind(LIST_ID, JSON.stringify(operation.itemIds)).all<{ status: ItemStatus }>()
   const action = operation.kind === 'complete'
     ? `買い物を完了（${existing.results.length}件）`
-    : historyAction(existing.results[0]?.status ?? 'inactive', operation.status)
+    : operation.itemIds.length > 1
+      ? `${operation.status === 'purchased' ? '購入済みに変更' : operation.status === 'planned' ? '未購入に戻す' : '買い物から外す'}（${existing.results.length}件）`
+      : historyAction(existing.results[0]?.status ?? 'inactive', operation.status)
   const statements = shoppingOperationStatements(operation, LIST_ID, getAuthenticatedEmail(c), now, action)
   await c.env.DB.batch(statements.map(({ sql, params }) => c.env.DB.prepare(sql).bind(...params)))
   return c.json({ ok: true })
