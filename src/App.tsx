@@ -342,10 +342,14 @@ export default function App() {
     await changeShoppingStatus(item, 'planned')
   }
 
+  function hasShoppingCategoryHeading(categoryId: string) {
+    return shoppingItems.filter((item) => item.categoryId === categoryId).length >= 2
+  }
+
   function renderShoppingCategoryHeading(categoryId: string) {
     // Search limits the bulk action to the items the user can currently see.
     const categoryItems = shoppingItems.filter((item) => item.categoryId === categoryId)
-    if (categoryItems.length < 2) return null
+    if (!hasShoppingCategoryHeading(categoryId)) return null
     const checkedCount = categoryItems.filter((item) => item.status === 'purchased').length
     const allChecked = checkedCount === categoryItems.length
     const name = categories.find((category) => category.id === categoryId)?.name ?? 'その他'
@@ -718,7 +722,10 @@ export default function App() {
                 {(index === 0 || shoppingItems[index - 1].categoryId !== item.categoryId) && (
                   renderShoppingCategoryHeading(item.categoryId)
                 )}
-                <li className={item.status === 'purchased' ? 'shopping-row purchased' : 'shopping-row'} key={item.id}>
+                <li
+                  className={`shopping-row${item.status === 'purchased' ? ' purchased' : ''}${hasShoppingCategoryHeading(item.categoryId) ? '' : ' standalone'}`}
+                  key={item.id}
+                >
                   <button
                     className="purchase-button"
                     onClick={() => togglePurchased(item)}
