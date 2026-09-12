@@ -345,6 +345,7 @@ export default function App() {
   function renderShoppingCategoryHeading(categoryId: string) {
     // Search limits the bulk action to the items the user can currently see.
     const categoryItems = shoppingItems.filter((item) => item.categoryId === categoryId)
+    if (categoryItems.length < 2) return null
     const checkedCount = categoryItems.filter((item) => item.status === 'purchased').length
     const allChecked = checkedCount === categoryItems.length
     const name = categories.find((category) => category.id === categoryId)?.name ?? 'その他'

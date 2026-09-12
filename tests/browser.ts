@@ -122,11 +122,15 @@ try {
   const rowNames = () => [...document.querySelectorAll('.shopping-row .item-name')].map((node) => node.textContent).join(',')
   check(rowNames() === 'a,b,c', 'shopping rows follow category order instead of checked status')
   check(document.querySelector('.shopping-category-heading')?.textContent?.includes('パン麺類'), 'category heading follows category sortOrder')
+  check(document.querySelectorAll('.shopping-category-heading').length === 1, 'single-product category has no shopping heading')
+  check(document.querySelector('.shopping-row')!.getBoundingClientRect().height === 40, 'plain shopping row is 40px tall')
+  check(document.querySelector('.shopping-category-heading')!.getBoundingClientRect().height === 40, 'shopping category heading is 40px tall')
   const click = (selector: string) => (document.querySelector(selector) as HTMLButtonElement).click()
   const category = () => document.querySelector('.category-purchase-button')!
   check(category().getAttribute('aria-checked') === 'mixed', 'category checkbox shows a partial selection')
   click('.category-purchase-button')
   await waitFor(() => category().getAttribute('aria-checked') === 'true')
+  check(document.querySelectorAll('.shopping-category-heading').length === 1, 'checking products does not remove their category heading')
   check(document.querySelectorAll('.shopping-row.purchased').length === 2, 'category check selects only its own products')
   click('.category-purchase-button')
   await waitFor(() => category().getAttribute('aria-checked') === 'false')
@@ -150,6 +154,8 @@ try {
   unavailable = false
   window.dispatchEvent(new Event('online'))
   await waitFor(() => !document.querySelector('.sync-status'))
+  check(document.querySelector('.item-row')!.getBoundingClientRect().height === 40, 'plain catalog row is 40px tall')
+  check(document.querySelector('.category-header')!.getBoundingClientRect().height === 40, 'catalog category heading is 40px tall')
   check(server.items.every((item) => item.status === 'inactive'), 'online event automatically synchronizes complete-all')
   await realFetch('/__test_result', { method: 'POST', body: JSON.stringify({ ok: true, results }) })
 } catch (error) {
