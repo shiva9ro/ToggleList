@@ -1,6 +1,7 @@
 import { initialData, initialSearchKeywords, DEFAULT_LIST_ID } from './initialData'
 import type { Category, ShoppingHistoryEntry, ShoppingItem, ShoppingList } from '../types/models'
 import { createId } from '../utils/id'
+import type { ShoppingOperation } from './shoppingOperations'
 
 export interface Snapshot {
   list: ShoppingList
@@ -21,6 +22,15 @@ export class ApiNetworkError extends Error {
   }
 }
 
+export class ApiHttpError extends Error {
+  status: number
+  constructor(status: number) {
+    super(`API request failed (${status})`)
+    this.name = 'ApiHttpError'
+    this.status = status
+  }
+}
+
 async function request<T>(url: string, init?: RequestInit): Promise<T> {
   const headers = new Headers(init?.headers)
   if (init?.body != null && !headers.has('Content-Type')) {
@@ -29,15 +39,19 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
   let response: Response
   try {
-    response = await fetch(url, { ...init, headers })
+    response = await fetch(url, { ...init, headers, cache: 'no-store', signal: AbortSignal.timeout(10_000) })
   } catch (error) {
     throw new ApiNetworkError(error)
   }
   if (!response.ok) {
-    const text = await response.text()
-    throw new Error(`${response.status} ${response.statusText}: ${text}`)
+    throw new ApiHttpError(response.status)
   }
-  return response.json() as Promise<T>
+  try {
+    return await response.json() as T
+  } catch (error) {
+    // An interrupted response or an Access redirect is not proof of expired authentication.
+    throw new ApiNetworkError(error)
+  }
 }
 
 export async function loadSnapshot(): Promise<Snapshot> {
@@ -120,8 +134,8 @@ export async function deleteItem(id: string): Promise<void> {
   await request(`/api/items/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
-export async function completeShoppingOnServer(): Promise<void> {
-  await request('/api/shopping/complete', { method: 'POST', body: '{}' })
+export async function sendShoppingOperation(operation: ShoppingOperation): Promise<void> {
+  await request('/api/shopping/operations', { method: 'POST', body: JSON.stringify(operation) })
 }
 
 export async function reorderItems(updates: Array<{ id: string; sortOrder: number }>): Promise<void> {

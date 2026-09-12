@@ -1,4 +1,5 @@
 import { Hono } from 'hono'
+import { isShoppingOperation, readableHistoryItemName, shoppingOperationStatements } from './server/shoppingOperations'
 
 interface Env {
   DB: D1Database
@@ -38,7 +39,9 @@ app.get('/api/history', async (c) => {
   const rows = await c.env.DB.prepare(
     'SELECT id, list_id, action, item_name, actor, created_at FROM shopping_history WHERE list_id = ? ORDER BY created_at DESC, id DESC LIMIT ?',
   ).bind(LIST_ID, limit).all()
-  return c.json(rows.results)
+  return c.json(rows.results.map((row) => ({
+    ...row, item_name: readableHistoryItemName(row.item_name, String(row.action)),
+  })))
 })
 
 app.get('/api/snapshot', async (c) => {
@@ -139,6 +142,27 @@ app.post('/api/items/bulk', async (c) => {
   return c.json({ ok: true }, 201)
 })
 
+app.post('/api/shopping/operations', async (c) => {
+  let operation: unknown
+  try {
+    operation = await c.req.json()
+  } catch {
+    return c.json({ error: 'Invalid JSON.' }, 400)
+  }
+  if (!isShoppingOperation(operation)) return c.json({ error: 'Invalid shopping operation.' }, 400)
+  const now = new Date().toISOString()
+  const existing = await c.env.DB.prepare(
+    'SELECT status FROM items WHERE list_id = ? AND id IN (SELECT value FROM json_each(?))',
+  ).bind(LIST_ID, JSON.stringify(operation.itemIds)).all<{ status: ItemStatus }>()
+  const action = operation.kind === 'complete'
+    ? `買い物を完了（${existing.results.length}件）`
+    : historyAction(existing.results[0]?.status ?? 'inactive', operation.status)
+  const statements = shoppingOperationStatements(operation, LIST_ID, getAuthenticatedEmail(c), now, action)
+  await c.env.DB.batch(statements.map(({ sql, params }) => c.env.DB.prepare(sql).bind(...params)))
+  return c.json({ ok: true })
+})
+
+// Keep the old endpoint for already-installed clients until they receive the PWA update.
 app.post('/api/shopping/complete', async (c) => {
   const now = new Date().toISOString()
   const purchased = await c.env.DB.prepare(

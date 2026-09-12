@@ -13,7 +13,9 @@ The user interface and sample data are in Japanese. The app was built for a smal
 - Three explicit states: inactive, planned, and purchased
 - Categorized item catalog with per-category and global collapse controls
 - Add, edit, delete, bulk-add, and deliberately reorder items
-- Complete all purchased items together while leaving unpurchased items planned
+- Category-ordered shopping rows that stay in place when checked
+- Complete checked items, or confirm and complete the entire shopping list
+- Durable offline shopping operations with automatic retry
 - Show each item's most recent purchase as today or a number of days ago
 - Recent history with timestamps, authenticated users, shopping actions, and completed items
 - Japanese search normalization across hiragana/katakana and half-width/full-width forms
@@ -24,16 +26,20 @@ The user interface and sample data are in Japanese. The app was built for a smal
 
 ## Scope and architecture
 
-ToggleList is intended for a small, trusted household, not as a multi-tenant shopping service. Cloudflare D1 is the source of truth. IndexedDB stores the last successful snapshot on each device so that the list appears quickly; saved changes still require a network connection.
+ToggleList is intended for a small, trusted household, not as a multi-tenant shopping service. Cloudflare D1 is the source of truth. IndexedDB stores the last successful snapshot and pending shopping operations on each device. Initial setup and catalog creation, editing, deletion, and reordering still require a connection.
 
 ```text
 Installed PWA / browser
-  ├─ IndexedDB (display cache)
+  ├─ IndexedDB (display cache + pending operations)
   └─ Cloudflare Worker API
        └─ D1 (shared source of truth)
 ```
 
-The UI applies common shopping actions optimistically and rolls them back if saving fails. While visible, the app checks for changes from other devices about every 30 seconds and also refreshes when the page or window becomes active. Concurrent edits use last-write-wins behavior. There is no offline mutation queue.
+Shopping actions are saved on the device before appearing in the UI. Network failures keep changes queued, including across app restarts. The app retries in order on launch, reconnection, focus, and about every 30 seconds while visible. It does not synchronize in the background while closed.
+
+Completion captures item IDs at the time of the action so it cannot complete other items added by another device later. Conflicting status changes use server last-write-wins behavior; unrelated fields are preserved. Operation IDs in existing history rows prevent duplicate application after a lost response. Only HTTP 401 prompts reauthentication; network failures alone do not.
+
+No D1 migration is required for this update. Device IndexedDB upgrades automatically. Deploy the frontend and Worker together because the API has also changed.
 
 ## Technology
 
@@ -72,10 +78,12 @@ For frontend-only development, `npm.cmd run dev` starts Vite, but API-backed ope
 ```powershell
 npm.cmd clean-install
 npm.cmd run lint
+npm.cmd test
 npm.cmd run build
+npm.cmd run test:browser
 ```
 
-There is currently no automated unit-test suite. The CI workflow runs the existing static checks and production build on every push and pull request. For manual multi-device testing, open two browser sessions and verify that changes reach the other session within about 30 seconds or after focus is restored.
+Unit tests exercise completion, retry deduplication, and rollback against SQLite using the existing migrations. Browser tests use a temporary Chrome/Edge profile to check IndexedDB persistence, network failures, reconnection, and UI behavior; set BROWSER_PATH if the executable is not detected. CI runs static checks, unit tests, and the production build. For manual multi-device testing, open two browser sessions and verify that changes reach the other session within about 30 seconds or after focus is restored.
 
 ## Deployment
 
@@ -86,7 +94,7 @@ Apply pending production D1 migrations before deploying a Worker that depends on
 ## Data and security
 
 - D1 stores the shared item data and the authenticated user's email address in change history.
-- IndexedDB is only a device-local display cache, not an independent backup or offline write store.
+- IndexedDB includes pending operations. Clearing browser site data deletes unsynchronized work. It is not an independent backup.
 - JSON exports can contain item names, notes, and user identifiers; store and share them carefully.
 - Do not commit real household data, logs, OAuth client secrets, Cloudflare API tokens, or local environment files.
 - Restrict the Cloudflare Access policy to the intended users. The Worker trusts the `Cf-Access-Authenticated-User-Email` header supplied by Access; deploying it without Access removes that intended protection.

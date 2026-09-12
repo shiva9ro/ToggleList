@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { BulkAddDialog } from './components/BulkAddDialog'
 import { ItemDialog } from './components/ItemDialog'
 import { DEFAULT_LIST_ID } from './data/initialData'
-import { ApiNetworkError, completeShoppingOnServer, createItem, createItems, deleteItem, loadHistory, loadSnapshot, reorderItems, updateItem } from './data/api'
+import { ApiHttpError, ApiNetworkError, createItem, createItems, deleteItem, loadHistory, reorderItems, updateItem } from './data/api'
 import type { Snapshot } from './data/api'
-import { loadCachedSnapshot, saveCachedSnapshot } from './data/snapshotCache'
+import { loadShoppingView, queueShoppingOperation, synchronizeShopping } from './data/shoppingSync'
+import type { ShoppingOperation } from './data/shoppingOperations'
 import type { Category, ShoppingHistoryEntry, ShoppingItem, ShoppingList } from './types/models'
 import { createId } from './utils/id'
 import { normalizeSearchText } from './utils/search'
@@ -34,6 +35,8 @@ export default function App() {
   const [reauthSuggested, setReauthSuggested] = useState(false)
   const [initialSyncing, setInitialSyncing] = useState(false)
   const [showingCachedSnapshot, setShowingCachedSnapshot] = useState(false)
+  const [pendingCount, setPendingCount] = useState(0)
+  const [offline, setOffline] = useState(() => !navigator.onLine)
   const [pendingItemIds, setPendingItemIds] = useState<Set<string>>(new Set())
   const [search, setSearch] = useState('')
   const [sortMode, setSortMode] = useState(false)
@@ -61,7 +64,7 @@ export default function App() {
   })
   const hasDisplayDataRef = useRef(false)
   const localMutationVersionRef = useRef(0)
-  const activeMutationCountRef = useRef(0)
+  const viewVersionRef = useRef(0)
   const pendingItemIdsRef = useRef<Set<string>>(new Set())
 
   function applySnapshot(snapshot: Snapshot) {
@@ -73,7 +76,7 @@ export default function App() {
   }
 
   function suggestReauthentication(error: unknown) {
-    const suggested = error instanceof ApiNetworkError && navigator.onLine
+    const suggested = error instanceof ApiHttpError && error.status === 401
     setReauthSuggested(suggested)
     return suggested
   }
@@ -82,124 +85,100 @@ export default function App() {
     window.location.assign('/auth/refresh')
   }
 
+  async function refreshLocalView() {
+    const version = ++viewVersionRef.current
+    const view = await loadShoppingView()
+    if (version !== viewVersionRef.current) return
+    if (view.snapshot) applySnapshot(view.snapshot)
+    setPendingCount(view.pendingCount)
+  }
+
   async function refreshSnapshot(showError = true, showInitialStatus = false) {
     if (showInitialStatus) setInitialSyncing(true)
     const mutationVersionAtStart = localMutationVersionRef.current
     try {
-      const snapshot = await loadSnapshot()
-      if (
-        activeMutationCountRef.current > 0 ||
-        localMutationVersionRef.current !== mutationVersionAtStart
-      ) {
-        return false
-      }
-      applySnapshot(snapshot)
-      setDisplayDate(new Date())
+      await synchronizeShopping()
       setShowingCachedSnapshot(false)
-      setSyncError(null)
-      setReauthSuggested(false)
-      try {
-        await saveCachedSnapshot(snapshot)
-      } catch (cacheError) {
-        console.warn('スナップショットを端末へ保存できませんでした。', cacheError)
+      if (localMutationVersionRef.current === mutationVersionAtStart) {
+        setSyncError(null)
+        setReauthSuggested(false)
       }
       return true
     } catch (error) {
       console.error(error)
       if (showError) {
-        const authenticationMayHaveExpired = suggestReauthentication(error)
-        setSyncError(authenticationMayHaveExpired
-          ? 'サーバーと同期できません。ログインの有効期限が切れた可能性があります。'
-          : hasDisplayDataRef.current
-            ? 'サーバーと同期できません。前回のデータを表示しています。'
-            : 'サーバーとの同期に失敗しました。')
+        const authenticationExpired = suggestReauthentication(error)
+        setSyncError(authenticationExpired
+          ? 'ログインの有効期限が切れています。端末に保存した変更は再ログイン後に同期します。'
+          : error instanceof ApiHttpError && error.status === 403
+            ? 'アクセスが拒否されました。利用権限を確認してください。変更は端末に保持しています。'
+            : !(error instanceof ApiHttpError || error instanceof ApiNetworkError)
+              ? '端末への保存処理に失敗しました。空き容量やブラウザの保存設定を確認してください。'
+              : hasDisplayDataRef.current
+                ? 'サーバーと同期できません。端末に保存した変更は、接続でき次第、自動で再送します。'
+                : 'データを取得できません。初回はネットワークに接続して再試行してください。')
       }
       return false
     } finally {
+      setDisplayDate(new Date())
+      try {
+        await refreshLocalView()
+      } catch (error) {
+        console.error(error)
+        setSyncError('端末の保存データを読み込めませんでした。再試行してください。')
+      }
       if (showInitialStatus) setInitialSyncing(false)
     }
   }
 
-  async function runOptimisticMutation(
-    affectedIds: string[],
-    applyOptimisticUpdate: () => void,
-    rollback: () => void,
-    request: () => Promise<void>,
-  ) {
-    if (affectedIds.some((id) => pendingItemIdsRef.current.has(id))) return
-
-    const nextPendingIds = new Set(pendingItemIdsRef.current)
-    affectedIds.forEach((id) => nextPendingIds.add(id))
-    pendingItemIdsRef.current = nextPendingIds
-    setPendingItemIds(nextPendingIds)
-    activeMutationCountRef.current += 1
+  async function saveShoppingOperation(operation: ShoppingOperation) {
+    if (operation.itemIds.some((id) => pendingItemIdsRef.current.has(id))) return
+    operation.itemIds.forEach((id) => pendingItemIdsRef.current.add(id))
+    setPendingItemIds(new Set(pendingItemIdsRef.current))
     localMutationVersionRef.current += 1
-    setSyncError(null)
-    setReauthSuggested(false)
-    applyOptimisticUpdate()
-
     try {
-      await request()
+      await queueShoppingOperation(operation)
+      await refreshLocalView()
     } catch (error) {
       console.error(error)
-      localMutationVersionRef.current += 1
-      rollback()
-      const authenticationMayHaveExpired = suggestReauthentication(error)
-      setSyncError(authenticationMayHaveExpired
-        ? '変更を保存できませんでした。ログインの有効期限が切れた可能性があります。'
-        : '変更を保存できませんでした。通信状態を確認して、もう一度お試しください。')
+      setSyncError('変更を端末に保存できませんでした。空き容量やブラウザの保存設定を確認し、もう一度操作してください。')
+      return
     } finally {
-      activeMutationCountRef.current -= 1
-      const remainingPendingIds = new Set(pendingItemIdsRef.current)
-      affectedIds.forEach((id) => remainingPendingIds.delete(id))
-      pendingItemIdsRef.current = remainingPendingIds
-      setPendingItemIds(remainingPendingIds)
-      if (activeMutationCountRef.current === 0) {
-        void refreshSnapshot(false)
-      }
+      operation.itemIds.forEach((id) => pendingItemIdsRef.current.delete(id))
+      setPendingItemIds(new Set(pendingItemIdsRef.current))
     }
+    void refreshSnapshot()
   }
 
   useEffect(() => {
     const initialize = async () => {
       try {
-        const cached = await loadCachedSnapshot()
-        if (cached) {
-          applySnapshot(cached.snapshot)
-          setShowingCachedSnapshot(true)
-        }
+        await refreshLocalView()
+        setShowingCachedSnapshot(true)
       } catch (error) {
-        console.warn('端末に保存したスナップショットを読み込めませんでした。', error)
+        console.warn('端末の保存データを読み込めませんでした。', error)
       }
       await refreshSnapshot(true, true)
     }
-
     void initialize()
     const refreshIfVisible = () => {
-      if (document.visibilityState === 'visible') {
-        void refreshSnapshot(false)
-      }
+      if (document.visibilityState === 'visible') void refreshSnapshot()
     }
-
-    let foregroundRefresh: Promise<void> | null = null
-    const refreshOnForeground = () => {
-      if (document.visibilityState !== 'visible') return
-      if (foregroundRefresh) return
-      foregroundRefresh = (async () => {
-        const refreshed = await refreshSnapshot(false)
-        if (!refreshed) setDisplayDate(new Date())
-      })().finally(() => {
-        foregroundRefresh = null
-      })
+    const connectionChanged = () => {
+      setOffline(!navigator.onLine)
+      if (navigator.onLine) void refreshSnapshot()
     }
-
     const timer = window.setInterval(refreshIfVisible, 30_000)
-    window.addEventListener('focus', refreshOnForeground)
-    document.addEventListener('visibilitychange', refreshOnForeground)
+    window.addEventListener('online', connectionChanged)
+    window.addEventListener('offline', connectionChanged)
+    window.addEventListener('focus', refreshIfVisible)
+    document.addEventListener('visibilitychange', refreshIfVisible)
     return () => {
       window.clearInterval(timer)
-      window.removeEventListener('focus', refreshOnForeground)
-      document.removeEventListener('visibilitychange', refreshOnForeground)
+      window.removeEventListener('online', connectionChanged)
+      window.removeEventListener('offline', connectionChanged)
+      window.removeEventListener('focus', refreshIfVisible)
+      document.removeEventListener('visibilitychange', refreshIfVisible)
     }
   }, [])
 
@@ -314,12 +293,13 @@ export default function App() {
     () => matchedItems
       .filter((item) => item.status !== 'inactive')
       .sort((a, b) => {
-        const statusOrder = (status: ShoppingItem['status']) => status === 'planned' ? 0 : 1
-        const statusDiff = statusOrder(a.status) - statusOrder(b.status)
-        if (statusDiff !== 0) return statusDiff
-        return b.updatedAt.localeCompare(a.updatedAt)
+        const categoryOrder = (id: string) => categories.find((category) => category.id === id)?.sortOrder ?? Number.MAX_SAFE_INTEGER
+        return categoryOrder(a.categoryId) - categoryOrder(b.categoryId)
+          || a.categoryId.localeCompare(b.categoryId)
+          || a.sortOrder - b.sortOrder
+          || a.id.localeCompare(b.id)
       }),
-    [matchedItems],
+    [matchedItems, categories],
   )
 
   const shoppingCount = items.filter((item) => item.status !== 'inactive').length
@@ -350,50 +330,24 @@ export default function App() {
     return days === 0 ? '今日' : `${days}日前`
   }
 
-  async function addToShopping(item: ShoppingItem) {
+  async function changeShoppingStatus(item: ShoppingItem, status: ShoppingItem['status']) {
     if (sortMode) return
-    const updatedAt = new Date().toISOString()
-    await runOptimisticMutation(
-      [item.id],
-      () => setItems((current) => current.map((candidate) =>
-        candidate.id === item.id ? { ...candidate, status: 'planned', updatedAt } : candidate,
-      )),
-      () => setItems((current) => current.map((candidate) =>
-        candidate.id === item.id ? item : candidate,
-      )),
-      () => updateItem(item.id, { status: 'planned' }),
-    )
+    await saveShoppingOperation({
+      id: createId(), kind: 'status', itemIds: [item.id], status,
+      createdAt: new Date().toISOString(),
+    })
+  }
+
+  async function addToShopping(item: ShoppingItem) {
+    await changeShoppingStatus(item, 'planned')
   }
 
   async function togglePurchased(item: ShoppingItem) {
-    if (sortMode) return
-    const purchased = item.status !== 'purchased'
-    const status = purchased ? 'purchased' : 'planned'
-    const updatedAt = new Date().toISOString()
-    await runOptimisticMutation(
-      [item.id],
-      () => setItems((current) => current.map((candidate) =>
-        candidate.id === item.id ? { ...candidate, status, updatedAt } : candidate,
-      )),
-      () => setItems((current) => current.map((candidate) =>
-        candidate.id === item.id ? item : candidate,
-      )),
-      () => updateItem(item.id, { status }),
-    )
+    await changeShoppingStatus(item, item.status === 'purchased' ? 'planned' : 'purchased')
   }
 
   async function removeFromShopping(item: ShoppingItem) {
-    const updatedAt = new Date().toISOString()
-    await runOptimisticMutation(
-      [item.id],
-      () => setItems((current) => current.map((candidate) =>
-        candidate.id === item.id ? { ...candidate, status: 'inactive', updatedAt } : candidate,
-      )),
-      () => setItems((current) => current.map((candidate) =>
-        candidate.id === item.id ? item : candidate,
-      )),
-      () => updateItem(item.id, { status: 'inactive' }),
-    )
+    await changeShoppingStatus(item, 'inactive')
   }
 
   async function saveItem(values: {
@@ -465,23 +419,14 @@ export default function App() {
     await refreshSnapshot()
   }
 
-  async function completeShopping() {
-    const purchasedItems = items.filter((item) => item.status === 'purchased')
-    if (purchasedItems.length === 0) return
-    const purchasedById = new Map(purchasedItems.map((item) => [item.id, item]))
-    const completedAt = new Date().toISOString()
-    await runOptimisticMutation(
-      purchasedItems.map((item) => item.id),
-      () => setItems((current) => current.map((item) =>
-        purchasedById.has(item.id)
-          ? { ...item, status: 'inactive', lastCompletedAt: completedAt, updatedAt: completedAt }
-          : item,
-      )),
-      () => setItems((current) => current.map((item) =>
-        purchasedById.get(item.id) ?? item,
-      )),
-      completeShoppingOnServer,
-    )
+  async function completeShopping(all = false) {
+    const selected = items.filter((item) => all ? item.status !== 'inactive' : item.status === 'purchased')
+    if (selected.length === 0) return
+    if (all && !window.confirm(`検索で非表示の商品も含め、買い物リストの全${selected.length}件を購入して完了しますか？`)) return
+    await saveShoppingOperation({
+      id: createId(), kind: 'complete', itemIds: selected.map((item) => item.id),
+      createdAt: new Date().toISOString(),
+    })
     setMenuOpen(false)
   }
 
@@ -694,6 +639,12 @@ export default function App() {
           </div>
         </div>
       )}
+      {(offline || pendingCount > 0) && (
+        <div className="sync-status" role="status">
+          {offline ? 'オフライン・' : ''}未同期{pendingCount}件
+          {pendingCount > 0 && '（端末に保存済み・接続後に自動同期）'}
+        </div>
+      )}
       {initialSyncing && showingCachedSnapshot && (
         <div className="sync-status" role="status">
           前回のデータを表示しています。最新情報を確認中…
@@ -731,35 +682,42 @@ export default function App() {
             <span>{purchasedCount}/{shoppingCount}</span>
           </header>
           <ul className="shopping-list">
-            {shoppingItems.map((item) => (
-              <li className={item.status === 'purchased' ? 'shopping-row purchased' : 'shopping-row'} key={item.id}>
-                <button
-                  className="purchase-button"
-                  onClick={() => togglePurchased(item)}
-                  disabled={pendingItemIds.has(item.id)}
-                  aria-label={`${item.name}を${item.status === 'purchased' ? '未購入に戻す' : '購入済みにする'}`}
-                >
-                  <span className="check-icon" aria-hidden="true">
-                    {item.status === 'purchased' ? '✓' : ''}
-                  </span>
-                  <span className="item-main">
-                    <span className="item-name">{item.name}</span>
-                    {(item.quantity || item.unit || item.note) && (
-                      <span className="item-detail">
-                        {[item.quantity, item.unit, item.note].filter(Boolean).join(' ')}
-                      </span>
-                    )}
-                  </span>
-                </button>
-                <button
-                  className="row-menu-button"
-                  onClick={() => removeFromShopping(item)}
-                  disabled={pendingItemIds.has(item.id)}
-                  aria-label={`${item.name}を買い物から外す`}
-                >
-                  ×
-                </button>
-              </li>
+            {shoppingItems.map((item, index) => (
+              <Fragment key={item.id}>
+                {(index === 0 || shoppingItems[index - 1].categoryId !== item.categoryId) && (
+                  <li className="shopping-category-heading">
+                    <h3>{categories.find((category) => category.id === item.categoryId)?.name ?? 'その他'}</h3>
+                  </li>
+                )}
+                <li className={item.status === 'purchased' ? 'shopping-row purchased' : 'shopping-row'} key={item.id}>
+                  <button
+                    className="purchase-button"
+                    onClick={() => togglePurchased(item)}
+                    disabled={pendingItemIds.has(item.id)}
+                    aria-label={`${item.name}を${item.status === 'purchased' ? '未購入に戻す' : '購入済みにする'}`}
+                  >
+                    <span className="check-icon" aria-hidden="true">
+                      {item.status === 'purchased' ? '✓' : ''}
+                    </span>
+                    <span className="item-main">
+                      <span className="item-name">{item.name}</span>
+                      {(item.quantity || item.unit || item.note) && (
+                        <span className="item-detail">
+                          {[item.quantity, item.unit, item.note].filter(Boolean).join(' ')}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                  <button
+                    className="row-menu-button"
+                    onClick={() => removeFromShopping(item)}
+                    disabled={pendingItemIds.has(item.id)}
+                    aria-label={`${item.name}を買い物から外す`}
+                  >
+                    ×
+                  </button>
+                </li>
+              </Fragment>
             ))}
           </ul>
         </section>
@@ -870,16 +828,19 @@ export default function App() {
         )}
       </main>
 
-      {!sortMode && purchasedCount > 0 && (
+      {!sortMode && shoppingCount > 0 && (
         <div className="shopping-complete-bar">
-          <button type="button" onClick={completeShopping} disabled={pendingItemIds.size > 0}>
-            買い物を完了
+          <button type="button" onClick={() => void completeShopping()} disabled={pendingItemIds.size > 0 || purchasedCount === 0}>
+            チェック済みを完了
+          </button>
+          <button type="button" onClick={() => void completeShopping(true)} disabled={pendingItemIds.size > 0}>
+            すべて購入して完了
           </button>
         </div>
       )}
 
       <button
-        className={`floating-add${purchasedCount > 0 && !sortMode ? ' with-complete' : ''}`}
+        className={`floating-add${shoppingCount > 0 && !sortMode ? ' with-complete' : ''}`}
         onClick={() => setAddingCategoryId(categories[0]?.id)}
         disabled={sortMode}
         aria-label="項目を追加"
