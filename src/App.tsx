@@ -711,7 +711,7 @@ export default function App() {
         <section className="shopping-section" aria-labelledby="shopping-title">
           <header className="section-heading shopping-heading">
             <div>
-              <h2 id="shopping-title">買い物</h2>
+              <h2 id="shopping-title">買い物リスト</h2>
               <p className="shopping-updated-at" style={{ margin: '2px 0 0', color: '#747b70', fontSize: '11px', fontWeight: 500 }}>買い物リスト変更：{shoppingListChangedAt}{list.updatedBy ? `　${formatUpdater(list.updatedBy)}` : ''}</p>
             </div>
             <span>{purchasedCount}/{shoppingCount}</span>
@@ -761,7 +761,7 @@ export default function App() {
 
       <main className="catalog-section">
         <header className="section-heading catalog-heading">
-          <h2>{sortMode ? '並べ替え' : '全項目'}</h2>
+          <h2>{sortMode ? '並べ替え' : '商品一覧'}</h2>
           {!sortMode && (
             <div className="catalog-heading-actions">
               <span>{matchedItems.filter((item) => item.status === 'inactive').length}件</span>
